@@ -36,6 +36,7 @@ class DetectionValidator(BaseValidator):
         self.is_coco = False
         self.class_map = None
         self.args.task = 'detect'
+        self.args.conf = 0.4
         self.metrics = DetMetrics(save_dir=self.save_dir, on_plot=self.on_plot)
         self.iouv = torch.linspace(0.5, 0.95, 10)  # iou vector for mAP@0.5:0.95
         self.niou = self.iouv.numel()
@@ -83,7 +84,7 @@ class DetectionValidator(BaseValidator):
                                        self.args.conf,
                                        self.args.iou,
                                        labels=self.lb,
-                                       multi_label=True,
+                                       multi_label=False,
                                        agnostic=self.args.single_cls,
                                        max_det=self.args.max_det)
 

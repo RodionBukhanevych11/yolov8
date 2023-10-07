@@ -12,7 +12,7 @@ CFG_DET = 'yolov8n.yaml'
 CFG_SEG = 'yolov8n-seg.yaml'
 CFG_CLS = 'yolov8n-cls.yaml'  # or 'squeezenet1_0'
 CFG = get_cfg(DEFAULT_CFG)
-MODEL = Path(SETTINGS['weights_dir']) / 'yolov8n'
+MODEL = 'best_yolov8.pt'
 
 
 def test_func(*args):  # noqa
@@ -28,7 +28,7 @@ def test_export():
 
 
 def test_detect():
-    overrides = {'data': 'coco8.yaml', 'model': CFG_DET, 'imgsz': 32, 'epochs': 1, 'save': False}
+    overrides = {'data': 'coco8.yaml', 'model': CFG_DET, 'imgsz': 320, 'epochs': 1, 'save': False}
     CFG.data = 'coco8.yaml'
     CFG.imgsz = 32
 
@@ -123,3 +123,11 @@ def test_classify():
     assert test_func in pred.callbacks['on_predict_start'], 'callback test failed'
     result = pred(source=ASSETS, model=trainer.best)
     assert len(result), 'predictor test failed'
+
+
+if __name__=="__main__":
+    overrides = {'data': 'coco8.yaml', 'model': CFG_DET, 'imgsz': 320, 'epochs': 1, 'save': False}
+    CFG.data = 'coco8.yaml'
+    CFG.imgsz = 320
+    val = detect.DetectionValidator(args=CFG)
+    val(model=MODEL)

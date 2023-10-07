@@ -25,6 +25,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from tqdm import tqdm
+from copy import deepcopy
 
 from ultralytics.cfg import get_cfg
 from ultralytics.data.utils import check_cls_dataset, check_det_dataset
@@ -34,6 +35,8 @@ from ultralytics.utils.checks import check_imgsz
 from ultralytics.utils.files import increment_path
 from ultralytics.utils.ops import Profile
 from ultralytics.utils.torch_utils import de_parallel, select_device, smart_inference_mode
+from ultralytics.models.utils.metrics import get_levelbased_metrics
+from ultralytics.utils.ops import xywh2xyxy
 
 
 class BaseValidator:
@@ -77,6 +80,7 @@ class BaseValidator:
             _callbacks (dict): Dictionary to store various callback functions.
         """
         self.args = get_cfg(overrides=args)
+        self.args.batch = 2
         self.dataloader = dataloader
         self.pbar = pbar
         self.model = None
@@ -104,6 +108,11 @@ class BaseValidator:
 
         self.plots = {}
         self.callbacks = _callbacks or callbacks.get_default_callbacks()
+
+        self.confusion_metrics_dict = {"tp": [], "fp": [], "fn": []}
+        self.area_based_metrics = {}
+        self.areas_space = []
+        self.ranges_num = 3
 
     @smart_inference_mode()
     def __call__(self, trainer=None, model=None):
@@ -167,6 +176,31 @@ class BaseValidator:
         bar = tqdm(self.dataloader, desc, n_batches, bar_format=TQDM_BAR_FORMAT)
         self.init_metrics(de_parallel(model))
         self.jdict = []  # empty before each val
+
+        for batch_i, batch in enumerate(bar):
+            nb, _, height, width = batch['img'].shape
+            targets_bboxes = batch['bboxes']
+            targets_bboxes *= torch.tensor((width, height, width, height), device=self.device)
+            targets_bboxes = xywh2xyxy(targets_bboxes).squeeze()
+            for bbox in targets_bboxes:
+                area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+                self.areas_space.append(round(area.item()))
+            
+        min_area = min(self.areas_space)
+        max_area = max(self.areas_space)
+        # Calculate the range size
+        range_size = (max_area - min_area) / self.ranges_num
+        # Initialize the list to store the ranges
+        self.ranges = []
+        # Create n ranges
+        for i in range(self.ranges_num):
+            start = min_area + i * range_size
+            end = min_area + (i + 1) * range_size
+            self.ranges.append(str(round(start)) +  '_' + str(round(end)))
+
+        for rng in self.ranges:
+            self.area_based_metrics.update({rng: deepcopy(self.confusion_metrics_dict)})
+
         for batch_i, batch in enumerate(bar):
             self.run_callbacks('on_val_batch_start')
             self.batch_i = batch_i
@@ -187,12 +221,27 @@ class BaseValidator:
             with dt[3]:
                 preds = self.postprocess(preds)
 
+            
             self.update_metrics(preds, batch)
+            nb, _, height, width = batch['img'].shape
+            targets_bboxes = batch['bboxes']
+            targets_bboxes *= torch.tensor((width, height, width, height), device=self.device)
+            targets_bboxes = xywh2xyxy(targets_bboxes)
+            batch_targets = torch.cat((targets_bboxes, batch['cls']), axis = 1)
+
+            self.area_based_metrics = get_levelbased_metrics(batch_targets=batch_targets,
+                                                            batch_targets_paths=batch['im_file'],
+                                                            batch_predicts=preds,
+                                                            metrics=self.area_based_metrics,
+                                                            iou_th=0.6,
+                                                            conf_th=0.4)
+            
             if self.args.plots and batch_i < 3:
                 self.plot_val_samples(batch, batch_i)
                 self.plot_predictions(batch, preds, batch_i)
 
             self.run_callbacks('on_val_batch_end')
+
         stats = self.get_stats()
         self.check_stats(stats)
         self.speed = dict(zip(self.speed.keys(), (x.t / len(self.dataloader.dataset) * 1E3 for x in dt)))
@@ -214,6 +263,7 @@ class BaseValidator:
             if self.args.plots or self.args.save_json:
                 LOGGER.info(f"Results saved to {colorstr('bold', self.save_dir)}")
             return stats
+        
 
     def match_predictions(self, pred_classes, true_classes, iou):
         """
