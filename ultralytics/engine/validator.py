@@ -252,7 +252,23 @@ class BaseValidator:
                     df_dict['Path'].append(path_value)
 
         custom_metrics_df = pd.DataFrame(df_dict)
-        custom_metrics_df.to_csv("/Users/coxit/yolov8/ultralytics/custom_metrics.csv", index = False)
+        custom_metrics_df.to_csv("/Users/coxit/yolov8/custom_area_range_metrics.csv", index = False)
+
+        advanced_metrics_dict = {"Area_range": [], "Precision": [], "Recall": [], "F1_score": [], "Num_targets": []}
+        for area_range_key in list(self.area_based_metrics.keys()):
+            tp_value = len(self.area_based_metrics[area_range_key]['tp'])
+            fn_value = len(self.area_based_metrics[area_range_key]['fn'])
+            fp_value = len(self.area_based_metrics[area_range_key]['fp'])
+            precision = tp_value / (tp_value + fp_value + 1e-9)
+            recall = tp_value / (tp_value + fn_value + 1e-9)
+            f1 = 2 * precision * recall / (precision + recall + 1e-9)
+            advanced_metrics_dict['Area_range'].append(area_range_key)
+            advanced_metrics_dict['Precision'].append(precision)
+            advanced_metrics_dict['Recall'].append(recall)
+            advanced_metrics_dict['F1_score'].append(f1)
+            advanced_metrics_dict['Num_targets'].append(tp_value + fn_value + fp_value)
+        advanced_metrics_df = pd.DataFrame(advanced_metrics_dict)
+        advanced_metrics_df.to_csv("/Users/coxit/yolov8/advanced_area_range_metrics.csv", index = False)
 
         stats = self.get_stats()
         self.check_stats(stats)
