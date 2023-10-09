@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from tqdm import tqdm
 from copy import deepcopy
@@ -241,6 +242,17 @@ class BaseValidator:
                 self.plot_predictions(batch, preds, batch_i)
 
             self.run_callbacks('on_val_batch_end')
+
+        df_dict = {'Area_range': [], 'Prediction': [], 'Path': []}
+        for area_range_key in list(self.area_based_metrics.keys()):
+            for prediction in list(self.area_based_metrics[area_range_key].keys()):
+                for path_value in self.area_based_metrics[area_range_key][prediction]:
+                    df_dict['Area_range'].append(area_range_key)
+                    df_dict['Prediction'].append(prediction)
+                    df_dict['Path'].append(path_value)
+
+        custom_metrics_df = pd.DataFrame(df_dict)
+        custom_metrics_df.to_csv("/Users/coxit/yolov8/ultralytics/custom_metrics.csv", index = False)
 
         stats = self.get_stats()
         self.check_stats(stats)
